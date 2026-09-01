@@ -1,0 +1,57 @@
+
+# Dataset - exclude by name wherever they are
+data/HAM10000_images_part_1/
+data/HAM10000_images_part_2/
+data/raw/
+data/processed/
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Dataset
+data/raw/
+*.jpg
+*.jpeg
+*.png
+
+# Generated data
+data/processed/
+
+# Model checkpoints
+checkpoints/
+*.pth
+*.pt
+
+# Results
+results/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+data/raw/
+data/processed/
+
+checkpoints/
+*.pth
+*.pt
+
+results/
+
+.ipynb_checkpoints/
+.vscode/
+.idea/
