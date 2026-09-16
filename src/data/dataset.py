@@ -13,7 +13,7 @@ from torchvision import transforms
 # =========================================================
 
 ROOT = Path(
-    r"C:\Users\ANSH\OneDrive\Desktop\multimodal_skin_diagnosis"
+    r"C:\multimodal_skin_diagnosis"
 )
 
 RAW_DIR = ROOT / "data" / "raw"
@@ -57,11 +57,32 @@ def build_image_index():
     for image_dir in IMAGE_DIRS:
 
         if not image_dir.exists():
+
+            print(
+                f"WARNING: Image directory not found: "
+                f"{image_dir}"
+            )
+
             continue
 
-        for image_path in image_dir.glob("*.jpg"):
+        image_files = list(
+            image_dir.glob("*.jpg")
+        )
 
-            image_index[image_path.stem] = str(image_path)
+        print(
+            f"Found {len(image_files)} images in "
+            f"{image_dir.name}"
+        )
+
+        for image_path in image_files:
+
+            image_id = image_path.stem
+
+            image_index[image_id] = str(image_path)
+
+    print(
+        f"Total indexed images: {len(image_index)}"
+    )
 
     return image_index
 
@@ -74,32 +95,61 @@ def prepare_metadata(df):
 
     df = df.copy()
 
-    # Fill missing age with median age
+
+    # -----------------------------------------------------
+    # Age
+    # -----------------------------------------------------
+
     median_age = df["age"].median()
 
-    df["age"] = df["age"].fillna(median_age)
+    df["age"] = df["age"].fillna(
+        median_age
+    )
 
-    # Normalize age to approximately 0-1
     df["age"] = df["age"] / 100.0
 
-    # Encode sex
+
+    # -----------------------------------------------------
+    # Sex
+    # -----------------------------------------------------
+
     sex_mapping = {
         "male": 0,
         "female": 1,
         "unknown": 2
     }
 
-    df["sex"] = df["sex"].fillna("unknown")
-    df["sex"] = df["sex"].map(sex_mapping)
-
-    # Encode localization
-    locations = sorted(
-        df["localization"].dropna().unique()
+    df["sex"] = (
+        df["sex"]
+        .fillna("unknown")
+        .map(sex_mapping)
     )
 
+    # Safety in case an unexpected value occurs
+    df["sex"] = df["sex"].fillna(2)
+
+
+    # -----------------------------------------------------
+    # Localization
+    # -----------------------------------------------------
+
+    # Fixed mapping used for all datasets
     location_mapping = {
-        location: index
-        for index, location in enumerate(locations)
+        "abdomen": 0,
+        "acral": 1,
+        "back": 2,
+        "chest": 3,
+        "ear": 4,
+        "face": 5,
+        "foot": 6,
+        "genital": 7,
+        "hand": 8,
+        "lower extremity": 9,
+        "neck": 10,
+        "scalp": 11,
+        "trunk": 12,
+        "unknown": 13,
+        "upper extremity": 14
     }
 
     df["localization"] = (
@@ -107,6 +157,13 @@ def prepare_metadata(df):
         .fillna("unknown")
         .map(location_mapping)
     )
+
+    # Unknown/unmapped locations
+    df["localization"] = (
+        df["localization"]
+        .fillna(13)
+    )
+
 
     return df
 
@@ -123,13 +180,73 @@ class HAM10000Dataset(Dataset):
         transform=None
     ):
 
+        # -----------------------------------------------
+        # Read CSV
+        # -----------------------------------------------
+
         self.df = pd.read_csv(csv_file)
 
-        self.df = prepare_metadata(self.df)
+
+        # -----------------------------------------------
+        # Prepare metadata
+        # -----------------------------------------------
+
+        self.df = prepare_metadata(
+            self.df
+        )
+
+
+        # -----------------------------------------------
+        # Build image index
+        # -----------------------------------------------
 
         self.image_index = build_image_index()
 
+
+        # -----------------------------------------------
+        # Transform
+        # -----------------------------------------------
+
         self.transform = transform
+
+
+        # -----------------------------------------------
+        # Check missing images
+        # -----------------------------------------------
+
+        missing_images = []
+
+        for image_id in self.df["image_id"]:
+
+            if image_id not in self.image_index:
+
+                missing_images.append(
+                    image_id
+                )
+
+
+        if len(missing_images) > 0:
+
+            print(
+                f"\nWARNING: "
+                f"{len(missing_images)} images "
+                f"from {csv_file} were not found."
+            )
+
+            print(
+                "First missing images:"
+            )
+
+            print(
+                missing_images[:10]
+            )
+
+        else:
+
+            print(
+                f"All {len(self.df)} images found "
+                f"for {csv_file}"
+            )
 
 
     def __len__(self):
@@ -141,29 +258,54 @@ class HAM10000Dataset(Dataset):
 
         row = self.df.iloc[index]
 
-        # -----------------------------------------
+
+        # =================================================
         # Image
-        # -----------------------------------------
+        # =================================================
 
         image_id = row["image_id"]
 
-        image_path = self.image_index[image_id]
 
-        image = Image.open(image_path).convert("RGB")
+        if image_id not in self.image_index:
+
+            raise FileNotFoundError(
+                f"Image '{image_id}' was not found "
+                f"in the HAM10000 image directories."
+            )
+
+
+        image_path = self.image_index[
+            image_id
+        ]
+
+
+        image = Image.open(
+            image_path
+        ).convert("RGB")
+
 
         if self.transform:
-            image = self.transform(image)
+
+            image = self.transform(
+                image
+            )
 
 
-        # -----------------------------------------
+        # =================================================
         # Metadata
-        # -----------------------------------------
+        # =================================================
 
-        age = float(row["age"])
+        age = float(
+            row["age"]
+        )
 
-        sex = int(row["sex"])
+        sex = int(
+            row["sex"]
+        )
 
-        localization = int(row["localization"])
+        localization = int(
+            row["localization"]
+        )
 
 
         metadata = torch.tensor(
@@ -176,11 +318,14 @@ class HAM10000Dataset(Dataset):
         )
 
 
-        # -----------------------------------------
+        # =================================================
         # Label
-        # -----------------------------------------
+        # =================================================
 
-        label = CLASS_TO_INDEX[row["dx"]]
+        label = CLASS_TO_INDEX[
+            row["dx"]
+        ]
+
 
         label = torch.tensor(
             label,
@@ -192,36 +337,64 @@ class HAM10000Dataset(Dataset):
 
 
 # =========================================================
-# Image transforms
+# Training transforms
 # =========================================================
 
 train_transform = transforms.Compose([
 
-    transforms.Resize((224, 224)),
+    transforms.Resize(
+        (224, 224)
+    ),
 
     transforms.RandomHorizontalFlip(),
 
     transforms.RandomVerticalFlip(),
 
-    transforms.RandomRotation(20),
+    transforms.RandomRotation(
+        20
+    ),
 
     transforms.ToTensor(),
 
     transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
+        mean=[
+            0.485,
+            0.456,
+            0.406
+        ],
+
+        std=[
+            0.229,
+            0.224,
+            0.225
+        ]
     )
 ])
 
 
+# =========================================================
+# Validation / Test transforms
+# =========================================================
+
 val_test_transform = transforms.Compose([
 
-    transforms.Resize((224, 224)),
+    transforms.Resize(
+        (224, 224)
+    ),
 
     transforms.ToTensor(),
 
     transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225]
+        mean=[
+            0.485,
+            0.456,
+            0.406
+        ],
+
+        std=[
+            0.229,
+            0.224,
+            0.225
+        ]
     )
 ])
